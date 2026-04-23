@@ -1,0 +1,32 @@
+import socket
+
+def start_client():
+    host = '127.0.0.1'
+    port = 8080
+    server_address = (host, port)
+    
+    # replace client will be replaced with reliable UDP class instead of python socket
+    client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    
+    print(f"Communicating with server at {host}:{port}")
+    
+    while True:
+        message = input("Client: ")
+        
+        # to prevent forcibly closing the client
+        if message == 'quit':
+            break
+            
+        # encode to utf-8 to send bytes to the server address
+        client.sendto(message.encode('utf-8'), server_address)
+        
+        # block until response and decode it from bytes
+        response_bytes, _ = client.recvfrom(1024)
+        response = response_bytes.decode('utf-8')
+        
+        print(f"Server: {response}")
+        
+    client.close()
+
+if __name__ == "__main__":
+    start_client()
