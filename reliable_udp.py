@@ -132,7 +132,8 @@ class ReliableUDP:
                     if calc_checksum == checksum and flags & self.FLAG_SYN and flags & self.FLAG_ACK:
                         
                         # send ACK packet to server
-                        ack_packet = self._create_packet(1, seq + 1, self.FLAG_ACK) # why?
+                        # add 1 to seq_num of client, no matter what it is (it's 0 by default)
+                        ack_packet = self._create_packet(1, seq + 1, self.FLAG_ACK)
                         if not self._simulate_loss():
                             self.sock.sendto(ack_packet, server_address)
                         
@@ -172,9 +173,36 @@ class ReliableUDP:
                        # receive final ACK from client
                         elif flags & self.FLAG_ACK and client_address == address: 
                             self.expected_seq_num = 1
-                            self.seq_num = 0
+                            self.seq_num = 1
                             print(f"Connection established with {client_address}")
                             return client_address
+            except socket.timeout:
+                continue
+            
+    def close(self, address=None):
+        if address is None:
+            address = (self.host, self.port)
+            
+        fin_packet = self._create_packet(self.seq_num, 0, self.FLAG_FIN)
+        
+        while True:
+            if not self._simulate_loss():
+                self.sock.sendto(fin_packet, address)
+                
+            try:
+                ack_packet, _ = self.sock.recvfrom(1024)
+                parsed = self._parse_packet(ack_packet)
+                
+                if parsed:
+                    recv_seq, recv_ack, flags, recv_checksum, data = parsed
+                    temp_header = struct.pack(self.header_format, recv_seq, recv_ack, flags, 0)
+                    calc_checksum = self._calculate_checksum(temp_header + data)
+                    
+                    # when ACK is received, connection can be closed
+                    if calc_checksum == recv_checksum and (flags & self.FLAG_ACK):
+                        print("Connection closed cleanly.")
+                        self.sock.close()
+                        return
             except socket.timeout:
                 continue
             
