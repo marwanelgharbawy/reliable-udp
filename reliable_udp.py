@@ -9,6 +9,9 @@ class ReliableUDP:
         
         # unsigned int for seq_num, unsigned int for ack_num, unsigned char for 3 flags, unsigned short for checksum
         self.header_format = '!I I B H'
+        self.seq_num = 0
+        self.ack_num = 0
+        self.expected_seq_num = 0
         
         self.sock.settimeout(1.0) 
         
@@ -16,13 +19,69 @@ class ReliableUDP:
         if is_server:
             self.sock.bind((self.host, self.port))
             
-    def sendto(self, data, address):
-        pass
+    # takes data as bytes and address as (host, port)
+    def sendto(self, data, address=None):
+        if address is None:
+            address = (self.host, self.port)
+            
+        packet = self._create_packet(self.seq_num, 0, 0, data)
+        
+        while True:
+            self.sock.sendto(packet, address)
+            
+            # block until ACK is received or timeout occurs
+            try:
+                ack_packet, _ = self.sock.recvfrom(1024)
+                
+                # receive ACK packet, parse it and verify checksum and ACK number
+                parsed = self._parse_packet(ack_packet)
+                
+                if parsed:
+                    recv_seq, recv_ack, flags, recv_checksum, data = parsed
+                    
+                    temp_header = struct.pack(self.header_format, recv_seq, recv_ack, flags, 0)
+                    calc_checksum = self._calculate_checksum(temp_header + data)
+                    
+                    # compare checksum and ACK number for verification
+                    # if verified, toggle 0 and 1 for seq_num (stop and wait protocol)
+                    if calc_checksum == recv_checksum and recv_ack == self.seq_num:
+                        self.seq_num = 1 - self.seq_num 
+                        return
+                    
+            # if timeout occurs, resend packet
+            except socket.timeout:
+                continue
     
-    def recvfrom(self, buffer_size):
-        pass
+    def receive(self):
+        while True:
+            try:
+                packet, address = self.sock.recvfrom(1024) # block until packet is received or timeout occurs
+                parsed = self._parse_packet(packet)
+                
+                if parsed:
+                    seq_num, ack_num, flags, recv_checksum, data = parsed
+                    
+                    temp_header = struct.pack(self.header_format, seq_num, ack_num, flags, 0)
+                    calc_checksum = self._calculate_checksum(temp_header + data)
+                    
+                    # two checks required: checksum then sequence number
+                    # otherwise wait for next packet
+                    
+                    if calc_checksum == recv_checksum:
+                        
+                        # send ACK packet with ACK flag set and ACK number equal to received seq_num
+                        ack_packet = self._create_packet(0, seq_num, 1)
+                        self.sock.sendto(ack_packet, address)
+                        
+                        # if it's the expected sequence number
+                        if seq_num == self.expected_seq_num:
+                            self.expected_seq_num = 1 - self.expected_seq_num # toggle expected sequence number
+                            return data, address
+                        # else, it's duplicate packet
+            except socket.timeout:
+                continue
 
-    def _calculate_checksum(self, data: bytes) -> int:
+    def _calculate_checksum(self, data):
         
         # if number of bytes is odd, add a zero byte to make it even
         if len(data) % 2 != 0:
