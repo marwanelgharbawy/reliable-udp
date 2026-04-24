@@ -1,4 +1,5 @@
 import socket
+from reliable_udp import ReliableUDP
 
 def start_client():
     host = '127.0.0.1'
@@ -6,7 +7,7 @@ def start_client():
     server_address = (host, port)
     
     # replace client will be replaced with reliable UDP class instead of python socket
-    client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    client = ReliableUDP(host, port, is_server=False)
     
     print(f"Communicating with server at {host}:{port}")
     
