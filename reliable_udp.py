@@ -34,6 +34,7 @@ class ReliableUDP:
         # if not server, no need to bind
         if is_server:
             self.sock.bind((self.host, self.port))
+            print(f"Server listening on {self.host}:{self.port}")
             
     # takes data as bytes and address as (host, port)
     def sendto(self, data, address=None):
@@ -45,6 +46,7 @@ class ReliableUDP:
         while True:
             
             if self._simulate_packet_loss():
+                print("Dropping packet to simulate loss.")
                 pass # do nothing
             else:
                 # simulate checksum corruption
@@ -54,7 +56,8 @@ class ReliableUDP:
             # block until ACK is received or timeout occurs
             try:
                 ack_packet, _ = self.sock.recvfrom(1024)
-                
+                print(f"ACK received from {address}.")
+
                 # receive ACK packet, parse it and verify checksum and ACK number
                 parsed = self._parse_packet(ack_packet)
                 
@@ -67,11 +70,14 @@ class ReliableUDP:
                     # compare checksum and ACK number for verification
                     # if verified, toggle 0 and 1 for seq_num (stop and wait protocol)
                     if calc_checksum == recv_checksum and recv_ack == self.seq_num and (flags & self.FLAG_ACK):
-                        self.seq_num = 1 - self.seq_num 
+                        self.seq_num = 1 - self.seq_num
                         return
+                    else:
+                        print(f"ACK received from {address} with invalid checksum or ACK number. Discarded.")
                     
             # if timeout occurs, resend packet
             except socket.timeout:
+                print("Timeout while waiting for ACK. Retransmitting.")
                 continue
     
     def receive(self):
@@ -96,6 +102,7 @@ class ReliableUDP:
                         
                         # simulate ACK packet loss
                         if self._simulate_packet_loss():
+                            print(f"ACK for seq_num {seq_num} lost. No ACK sent.")
                             pass # do nothing
                         else:
                             self.sock.sendto(ack_packet, address)
@@ -108,8 +115,12 @@ class ReliableUDP:
                         # if it's the expected sequence number
                         if seq_num == self.expected_seq_num:
                             self.expected_seq_num = 1 - self.expected_seq_num # toggle expected sequence number
+                            print(f"Packet received from {address} with seq_num {seq_num}. ACK sent.")
                             return data, address
-                        # else, it's duplicate packet
+                        else:
+                            print(f"Duplicate packet received from {address} (seq_num {seq_num}). ACK re-sent. Discarding payload.")
+                    else:
+                        print(f"Packet received from {address} with seq_num {seq_num} with invalid checksum. Discarded.")
             except socket.timeout:
                 continue
             
@@ -121,6 +132,7 @@ class ReliableUDP:
             # send SYN packet to server
             if not self._simulate_packet_loss():
                 self.sock.sendto(syn_packet, server_address)
+                print(f"SYN packet sent to {server_address}.")
                 
             try:
                 # receive SYNACK packet from server
@@ -174,6 +186,7 @@ class ReliableUDP:
                             synack_packet = self._create_packet(0, client_seq + 1, self.FLAG_SYN | self.FLAG_ACK)
                             if not self._simulate_packet_loss():
                                 self.sock.sendto(synack_packet, client_address)
+                                print(f"SYNACK packet sent to {client_address}.")
                                 
                        # receive final ACK from client
                         elif flags & self.FLAG_ACK and client_address == address: 
@@ -181,6 +194,8 @@ class ReliableUDP:
                             self.seq_num = 1
                             print(f"Connection established with {client_address}")
                             return client_address
+                    else:
+                        print(f"Packet received from {address} with seq_num {seq} with invalid checksum. Discarded.")
             except socket.timeout:
                 continue
             
@@ -193,9 +208,9 @@ class ReliableUDP:
         while True:
             if not self._simulate_packet_loss():
                 self.sock.sendto(fin_packet, address)
-                
+                print(f"FIN packet sent to {address}.")
             try:
-                ack_packet, _ = self.sock.recvfrom(1024)
+                ack_packet, _ = self.sock.recvfrom(8192)
                 parsed = self._parse_packet(ack_packet)
                 
                 if parsed:
@@ -209,6 +224,7 @@ class ReliableUDP:
                         self.sock.close()
                         return
             except socket.timeout:
+                print("Timeout while waiting for ACK. Retransmitting FIN packet.")
                 continue
             
     def _simulate_packet_loss(self):
@@ -225,6 +241,7 @@ class ReliableUDP:
             # target the checksum byte and toggle the whole byte
             corrupted[9] ^= 0xFF 
             
+            print("Modifying checksum to simulate data corruption.")
             return bytes(corrupted)
         return packet # no corruption
 
@@ -243,7 +260,6 @@ class ReliableUDP:
             word = (checksum_data[i] << 8) + checksum_data[i+1]
             checksum += word
             checksum = (checksum & 0xffff) + (checksum >> 16) # add overflow bits while masking to 16 bits
-            
         return ~checksum & 0xffff
 
     # private method
