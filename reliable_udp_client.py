@@ -11,6 +11,9 @@ def start_client():
     
     print(f"Communicating with server at {host}:{port}")
     
+    # 3 way handshake
+    client.connect(server_address)
+    
     while True:
         message = input("Client: ")
         
@@ -22,7 +25,13 @@ def start_client():
         client.sendto(message.encode('utf-8'), server_address)
         
         # block until response and decode it from bytes
-        response_bytes, _ = client.receive(8192)
+        response_bytes, _ = client.receive()
+        
+        # server disconnect
+        if not response_bytes:
+            print("Server closed connection.")
+            break
+        
         response = response_bytes.decode('utf-8')
         
         print(f"Server: {response}")
