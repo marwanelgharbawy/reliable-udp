@@ -108,6 +108,76 @@ class ReliableUDP:
             except socket.timeout:
                 continue
             
+    def connect(self, server_address):
+        syn_packet = self._create_packet(0, 0, self.FLAG_SYN)
+        
+        while True:
+            
+            # send SYN packet to server
+            if not self._simulate_loss():
+                self.sock.sendto(syn_packet, server_address)
+                
+            try:
+                # receive SYNACK packet from server
+                response, _ = self.sock.recvfrom(1024)
+                parsed = self._parse_packet(response)
+                
+                if parsed:
+                    seq, ack, flags, checksum, data = parsed
+                    temp_header = struct.pack(self.header_format, seq, ack, flags, 0)
+                    
+                    calc_checksum = self._calculate_checksum(temp_header + data)
+                    
+                    # SYNACK: both SYN and ACK bits are set
+                    if calc_checksum == checksum and flags & self.FLAG_SYN and flags & self.FLAG_ACK:
+                        
+                        # send ACK packet to server
+                        ack_packet = self._create_packet(1, seq + 1, self.FLAG_ACK) # why?
+                        if not self._simulate_loss():
+                            self.sock.sendto(ack_packet, server_address)
+                        
+                        self.seq_num = 1
+                        self.expected_seq_num = seq + 1
+                        return
+            except socket.timeout:
+                continue
+
+    def accept(self):
+        client_address = None
+        client_seq = 0
+        
+        while True:
+            try:
+                # block until SYN packet is received
+                packet, address = self.sock.recvfrom(1024)
+                parsed = self._parse_packet(packet)
+                
+                if parsed:
+                    seq, ack, flags, checksum, data = parsed
+                    temp_header = struct.pack(self.header_format, seq, ack, flags, 0)
+                    
+                    calc_checksum = self._calculate_checksum(temp_header + data)
+                    
+                    if calc_checksum == checksum:
+                        # check for SYN flag only
+                        if flags & self.FLAG_SYN and not flags & self.FLAG_ACK: 
+                            client_address = address
+                            client_seq = seq
+                            
+                            # send SYNACK: SYN + ACK flags
+                            synack_packet = self._create_packet(0, client_seq + 1, self.FLAG_SYN | self.FLAG_ACK)
+                            if not self._simulate_loss():
+                                self.sock.sendto(synack_packet, client_address)
+                                
+                       # receive final ACK from client
+                        elif flags & self.FLAG_ACK and client_address == address: 
+                            self.expected_seq_num = 1
+                            self.seq_num = 0
+                            print(f"Connection established with {client_address}")
+                            return client_address
+            except socket.timeout:
+                continue
+            
     def _simulate_packet_loss(self):
         return random.random() < self.packet_loss_prob
     
