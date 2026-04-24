@@ -1,4 +1,4 @@
-from lab_4.ReliableUDP import ReliableUDP
+from ReliableUDP import ReliableUDP
 
 # same process data as tcp_server.py
 def process(data):

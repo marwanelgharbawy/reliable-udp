@@ -6,9 +6,9 @@ class ReliableUDP:
     def __init__(self, host, port, is_server=False):
         
         # flags defined as bitmasks
-        FLAG_SYN = 0b00000001
-        FLAG_ACK = 0b00000010
-        FLAG_FIN = 0b00000100
+        self.FLAG_SYN = 0b00000001
+        self.FLAG_ACK = 0b00000010
+        self.FLAG_FIN = 0b00000100
         # SYNACK is SYN | ACK
         
         self.host = host
@@ -28,8 +28,8 @@ class ReliableUDP:
         
         # simulation paramteres: packet loss probabilites and data corruption
         self.sock.settimeout(1.0) 
-        self.packet_loss_prob = 0.1
-        self.data_corruption_prob = 0.1
+        self.packet_loss_prob = 0.3
+        self.data_corruption_prob = 0.3
         
         # if not server, no need to bind
         if is_server:
