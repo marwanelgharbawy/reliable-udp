@@ -4,6 +4,13 @@ import random
 
 class ReliableUDP:
     def __init__(self, host, port, is_server=False):
+        
+        # flags defined as bitmasks
+        FLAG_SYN = 0b00000001
+        FLAG_ACK = 0b00000010
+        FLAG_FIN = 0b00000100
+        # SYNACK is SYN | ACK
+        
         self.host = host
         self.port = port
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # UDP socket
@@ -59,7 +66,7 @@ class ReliableUDP:
                     
                     # compare checksum and ACK number for verification
                     # if verified, toggle 0 and 1 for seq_num (stop and wait protocol)
-                    if calc_checksum == recv_checksum and recv_ack == self.seq_num:
+                    if calc_checksum == recv_checksum and recv_ack == self.seq_num and (flags & self.FLAG_ACK):
                         self.seq_num = 1 - self.seq_num 
                         return
                     
@@ -85,7 +92,7 @@ class ReliableUDP:
                     if calc_checksum == recv_checksum:
                         
                         # send ACK packet with ACK flag set and ACK number equal to received seq_num
-                        ack_packet = self._create_packet(0, seq_num, 1)
+                        ack_packet = self._create_packet(0, seq_num, self.FLAG_ACK)
                         
                         # simulate ACK packet loss
                         if self._simulate_loss():
