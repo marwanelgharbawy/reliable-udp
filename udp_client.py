@@ -22,7 +22,7 @@ def start_client():
         client.sendto(message.encode('utf-8'), server_address)
         
         # block until response and decode it from bytes
-        response_bytes, _ = client.recvfrom(1024)
+        response_bytes, _ = client.receive(1024)
         response = response_bytes.decode('utf-8')
         
         print(f"Server: {response}")

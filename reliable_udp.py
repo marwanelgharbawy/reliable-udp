@@ -44,7 +44,7 @@ class ReliableUDP:
         
         while True:
             
-            if self._simulate_loss():
+            if self._simulate_packet_loss():
                 pass # do nothing
             else:
                 # simulate checksum corruption
@@ -95,7 +95,7 @@ class ReliableUDP:
                         ack_packet = self._create_packet(0, seq_num, self.FLAG_ACK)
                         
                         # simulate ACK packet loss
-                        if self._simulate_loss():
+                        if self._simulate_packet_loss():
                             pass # do nothing
                         else:
                             self.sock.sendto(ack_packet, address)
@@ -114,7 +114,7 @@ class ReliableUDP:
         while True:
             
             # send SYN packet to server
-            if not self._simulate_loss():
+            if not self._simulate_packet_loss():
                 self.sock.sendto(syn_packet, server_address)
                 
             try:
@@ -134,7 +134,7 @@ class ReliableUDP:
                         # send ACK packet to server
                         # add 1 to seq_num of client, no matter what it is (it's 0 by default)
                         ack_packet = self._create_packet(1, seq + 1, self.FLAG_ACK)
-                        if not self._simulate_loss():
+                        if not self._simulate_packet_loss():
                             self.sock.sendto(ack_packet, server_address)
                         
                         self.seq_num = 1
@@ -167,7 +167,7 @@ class ReliableUDP:
                             
                             # send SYNACK: SYN + ACK flags
                             synack_packet = self._create_packet(0, client_seq + 1, self.FLAG_SYN | self.FLAG_ACK)
-                            if not self._simulate_loss():
+                            if not self._simulate_packet_loss():
                                 self.sock.sendto(synack_packet, client_address)
                                 
                        # receive final ACK from client
@@ -186,7 +186,7 @@ class ReliableUDP:
         fin_packet = self._create_packet(self.seq_num, 0, self.FLAG_FIN)
         
         while True:
-            if not self._simulate_loss():
+            if not self._simulate_packet_loss():
                 self.sock.sendto(fin_packet, address)
                 
             try:
@@ -221,21 +221,21 @@ class ReliableUDP:
             corrupted[9] ^= 0xFF 
             
             return bytes(corrupted)
-        return packet # just return normal packet 
-                
-        return data
+        return packet # no corruption
 
     def _calculate_checksum(self, data):
         
         # if number of bytes is odd, add a zero byte to make it even
         if len(data) % 2 != 0:
-            data += b'\0'
-            
+            checksum_data = data + b'\0'
+        else:
+            checksum_data = data
+
         checksum = 0
         
         # process data in words (2 bytes)
-        for i in range(0, len(data), 2):
-            word = (data[i] << 8) + data[i+1]
+        for i in range(0, len(checksum_data), 2):
+            word = (checksum_data[i] << 8) + checksum_data[i+1]
             checksum += word
             checksum = (checksum & 0xffff) + (checksum >> 16) # add overflow bits while masking to 16 bits
             
