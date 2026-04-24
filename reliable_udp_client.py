@@ -1,5 +1,5 @@
 import socket
-from reliable_udp import ReliableUDP
+from lab_4.ReliableUDP import ReliableUDP
 
 def start_client():
     host = '127.0.0.1'
