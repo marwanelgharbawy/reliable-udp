@@ -99,6 +99,11 @@ class ReliableUDP:
                             pass # do nothing
                         else:
                             self.sock.sendto(ack_packet, address)
+                            
+                        # if FIN is received, close connection
+                        if flags & self.FLAG_FIN:
+                            print(f"FIN received from {address}. Closing connection.")
+                            return b'', address # empty data
                         
                         # if it's the expected sequence number
                         if seq_num == self.expected_seq_num:
@@ -200,7 +205,7 @@ class ReliableUDP:
                     
                     # when ACK is received, connection can be closed
                     if calc_checksum == recv_checksum and (flags & self.FLAG_ACK):
-                        print("Connection closed cleanly.")
+                        print("Connection closed.")
                         self.sock.close()
                         return
             except socket.timeout:
