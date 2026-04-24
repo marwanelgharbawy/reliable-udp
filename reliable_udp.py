@@ -77,7 +77,7 @@ class ReliableUDP:
     def receive(self):
         while True:
             try:
-                packet, address = self.sock.recvfrom(1024) # block until packet is received or timeout occurs
+                packet, address = self.sock.recvfrom(8192) # block until packet is received or timeout occurs
                 parsed = self._parse_packet(packet)
                 
                 if parsed:
