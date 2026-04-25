@@ -177,6 +177,7 @@ class ReliableUDP:
                     else:
                         print(f"Duplicate packet received from {address} (seq_num {seq_num}). ACK re-sent. Discarding payload.")
                 else:
+                    # TODO: do we send ACK with different ACK number to trigger retransmission from sender?
                     print(f"Packet received from {address} with seq_num {seq_num} with invalid checksum. Discarded.")
             
     def connect(self, server_address):
