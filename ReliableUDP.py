@@ -10,9 +10,9 @@ FLAG_DATA = 0b00001000
 # SYNACK is SYN | ACK
 
 # simulation parameters
-PACKET_LOSS_PROB = 0.5
-DATA_CORRUPTION_PROB = 0
-TIMEOUT_SECONDS = 2
+PACKET_LOSS_PROB = 0.3
+DATA_CORRUPTION_PROB = 0.3
+TIMEOUT_SECONDS = 1
 
 # unsigned int for seq_num (4 bytes)
 # unsigned int for ack_num (4 bytes)
