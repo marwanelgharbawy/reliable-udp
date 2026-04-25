@@ -37,6 +37,9 @@ class ReliableUDP:
         self.packet_loss_prob = PACKET_LOSS_PROB
         self.data_corruption_prob = DATA_CORRUPTION_PROB
         
+        # buffer for unprocessed packets
+        self.unprocessed_packets = []
+        
         # if not server, no need to bind
         if is_server:
             self.sock.bind((self.host, self.port))
@@ -82,6 +85,11 @@ class ReliableUDP:
                         if calc_checksum == recv_checksum:
                             
                             if recv_ack == self.seq_num and flags & FLAG_ACK:
+                                
+                                if flags & FLAG_SYN:
+                                    print("Received SYNACK. Ignoring.")
+                                    continue
+                                
                                 print(f"ACK number {recv_ack} verified. Packet delivery successful.")
                                 self.seq_num = 1 - self.seq_num
                                 # self.expected_seq_num = 1 - self.expected_seq_num # fix?
@@ -96,6 +104,9 @@ class ReliableUDP:
                                 
                                 if not self._simulate_packet_loss():
                                     self.sock.sendto(dup_ack, address)
+                                    
+                                self.unprocessed_packets.append((ack_packet, address))
+                                
                                 # stay in the inner while loop to wait for ACK
                                 continue
                         else:
@@ -108,56 +119,65 @@ class ReliableUDP:
     
     def receive(self):
         while True:
-            try:
-                packet, address = self.sock.recvfrom(8192) # block until packet is received or timeout occurs
-                parsed = self._parse_packet(packet)
+            # if there's an unprocessed packet in the buffer, process it first before receiving new packets
+            if self.unprocessed_packets:
+                packet, address = self.unprocessed_packets.pop(0)
+            else:
+                try:
+                    packet, address = self.sock.recvfrom(8192) 
+                except socket.timeout:
+                    continue
                 
-                if parsed:
-                    seq_num, ack_num, flags, recv_checksum, data = parsed
+            parsed = self._parse_packet(packet)
+            
+            if parsed:
+                seq_num, ack_num, flags, recv_checksum, data = parsed
+                
+                # ignore control packets
+                if not (flags & FLAG_DATA) and not (flags & FLAG_FIN):
+                    continue
+                
+                print(f"Packet received with seq_num {seq_num}.")
+                
+                temp_header = struct.pack(HEADER_FORMAT, seq_num, ack_num, flags, 0)
+                calc_checksum = self._calculate_checksum(temp_header + data)
+                
+                # two checks required: checksum then sequence number
+                # otherwise wait for next packet
+                
+                if calc_checksum == recv_checksum:
                     
-                    print(f"Packet received with seq_num {seq_num}.")
+                    # ignore ACK packets, receiver is the one that's supposed to send them
+                    # before, it caused an infinite loop of ACKs
+                    if flags & FLAG_ACK:
+                        print("Ignoring ACK packet received at receiver.")
+                        continue
                     
-                    temp_header = struct.pack(HEADER_FORMAT, seq_num, ack_num, flags, 0)
-                    calc_checksum = self._calculate_checksum(temp_header + data)
+                    # send ACK packet with ACK flag set and ACK number equal to received seq_num
+                    ack_packet = self._create_packet(0, seq_num, FLAG_ACK)
                     
-                    # two checks required: checksum then sequence number
-                    # otherwise wait for next packet
-                    
-                    if calc_checksum == recv_checksum:
-                        
-                        # ignore ACK packets, receiver is the one that's supposed to send them
-                        # before, it caused an infinite loop of ACKs
-                        if flags & FLAG_ACK:
-                            print("Ignoring ACK packet received at receiver.")
-                            continue
-                        
-                        # send ACK packet with ACK flag set and ACK number equal to received seq_num
-                        ack_packet = self._create_packet(0, seq_num, FLAG_ACK)
-                        
-                        # simulate ACK packet loss
-                        if self._simulate_packet_loss():
-                            print(f"ACK for seq_num {seq_num} lost. No ACK sent.")
-                            pass # do nothing
-                        else:
-                            self.sock.sendto(ack_packet, address)
-                            
-                        # if FIN is received, close connection
-                        if flags & FLAG_FIN:
-                            print(f"FIN received from {address}. Closing connection.")
-                            return b'', address # empty data
-                        
-                        # if it's the expected sequence number
-                        if seq_num == self.expected_seq_num:
-                            self.expected_seq_num = 1 - self.expected_seq_num # toggle expected sequence number
-                            print(f"Expected sequence number updated to {self.expected_seq_num}.")
-                            print(f"Packet received from {address} with seq_num {seq_num}. ACK sent.")
-                            return data, address
-                        else:
-                            print(f"Duplicate packet received from {address} (seq_num {seq_num}). ACK re-sent. Discarding payload.")
+                    # simulate ACK packet loss
+                    if self._simulate_packet_loss():
+                        print(f"ACK for seq_num {seq_num} lost. No ACK sent.")
+                        pass # do nothing
                     else:
-                        print(f"Packet received from {address} with seq_num {seq_num} with invalid checksum. Discarded.")
-            except socket.timeout:
-                continue
+                        self.sock.sendto(ack_packet, address)
+                        
+                    # if FIN is received, close connection
+                    if flags & FLAG_FIN:
+                        print(f"FIN received from {address}. Closing connection.")
+                        return b'', address # empty data
+                    
+                    # if it's the expected sequence number
+                    if seq_num == self.expected_seq_num:
+                        self.expected_seq_num = 1 - self.expected_seq_num # toggle expected sequence number
+                        print(f"Expected sequence number updated to {self.expected_seq_num}.")
+                        print(f"Packet received from {address} with seq_num {seq_num}. ACK sent.")
+                        return data, address
+                    else:
+                        print(f"Duplicate packet received from {address} (seq_num {seq_num}). ACK re-sent. Discarding payload.")
+                else:
+                    print(f"Packet received from {address} with seq_num {seq_num} with invalid checksum. Discarded.")
             
     def connect(self, server_address):
         syn_packet = self._create_packet(0, 0, FLAG_SYN)
@@ -229,6 +249,15 @@ class ReliableUDP:
                             self.expected_seq_num = 1
                             self.seq_num = 1
                             print(f"Connection established with {client_address}")
+                            
+                            # this case is when ACK was lost but connection was actually established for client
+                            # in that case, server is still waiting for ACK but it was lost
+                            # when a data packet is sent from client, it will be buffered in the unprocessed_packets 
+                            # and when receiev() is called, it will be processed and ACKed
+                            if flags & FLAG_DATA:
+                                print("Buffering early DATA packet from handshake.")
+                                self.unprocessed_packets.append((packet, address))
+                            
                             return client_address
                     else:
                         print(f"Packet received from {address} with seq_num {seq} with invalid checksum. Discarded.")
